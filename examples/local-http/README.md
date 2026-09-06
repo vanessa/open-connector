@@ -22,6 +22,12 @@ Run GitHub with a personal access token:
 GITHUB_TOKEN=github_pat_... node examples/local-http/github.ts
 ```
 
+Run Hevy with a developer API key from https://hevy.com/settings?developer (Hevy Pro accounts only):
+
+```bash
+HEVY_API_KEY=... node examples/local-http/hevy.ts
+```
+
 Run Notion with an internal integration token. Share target pages or databases with the integration
 first.
 

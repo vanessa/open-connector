@@ -469,9 +469,8 @@ export const hevyActions: ProviderActionDefinition[] = [
     description: "Create a custom Hevy exercise template on the account.",
     inputSchema: s.object("The custom Hevy exercise to create.", { exercise: customExerciseInputSchema }),
     outputSchema: s.object("The created custom Hevy exercise template.", {
-      exerciseTemplate: s.looseObject(
-        "The payload Hevy returns for the created exercise template. Hevy currently returns only the new template id.",
-        { id: s.unknown("The ID of the created exercise template.") },
+      exerciseTemplateId: s.string(
+        "The ID of the created exercise template. Pass it to get_exercise_template to read the stored template back.",
       ),
     }),
   }),

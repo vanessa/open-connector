@@ -82,6 +82,28 @@ describe("Hevy workout requests", () => {
     });
   });
 
+  it("reads the workout out of the one-element array a write answers with", async () => {
+    // Hevy documents POST /v1/workouts as returning the bare workout and
+    // actually wraps it in `workout` as a one-element array.
+    const created = { id: "workout-1", title: "Friday Leg Day" };
+
+    await expect(
+      hevyActionHandlers.create_workout(
+        { workout: { title: "Friday Leg Day", startTime: "t", endTime: "t", exercises: [] } },
+        jsonContext({ workout: [created] }, []),
+      ),
+    ).resolves.toEqual({ workout: created });
+  });
+
+  it("reads the workout a read answers with unwrapped", async () => {
+    // The matching GET is bare, so both shapes have to work.
+    const workout = { id: "workout-1", title: "Friday Leg Day" };
+
+    await expect(hevyActionHandlers.get_workout({ workoutId: "workout-1" }, jsonContext(workout, []))).resolves.toEqual(
+      { workout },
+    );
+  });
+
   it("reports a workout count response without a count as an upstream failure", async () => {
     await expect(hevyActionHandlers.get_workout_count({}, jsonContext({ count: 42 }, []))).rejects.toThrow(
       ProviderRequestError,
@@ -132,6 +154,43 @@ describe("Hevy routine requests", () => {
     );
 
     expect(requests[0]?.body).toEqual({ routine: { title: "April Leg Day", exercises: [] } });
+  });
+});
+
+describe("Hevy routine folder and exercise template writes", () => {
+  it("reads the folder out of the snake_case envelope a write answers with", async () => {
+    const folder = { id: 12, title: "Push Pull" };
+
+    await expect(
+      hevyActionHandlers.create_routine_folder({ title: "Push Pull" }, jsonContext({ routine_folder: folder }, [])),
+    ).resolves.toEqual({ routineFolder: folder });
+  });
+
+  it("reads the bare template id Hevy answers a custom exercise write with", async () => {
+    // Hevy documents this response as `{ id: number }` and answers with the
+    // id alone, as text/html.
+    const requests: RecordedRequest[] = [];
+    const output = await hevyActionHandlers.create_exercise_template(
+      {
+        exercise: {
+          title: "Bench Press",
+          exerciseType: "weight_reps",
+          equipmentCategory: "barbell",
+          muscleGroup: "chest",
+        },
+      },
+      providerContext(requests, () => new Response("7daae8b1-3995-40dc-a999-91d1d4bbc709", { status: 200 })),
+    );
+
+    expect(requests[0]?.body).toEqual({
+      exercise: {
+        title: "Bench Press",
+        exercise_type: "weight_reps",
+        equipment_category: "barbell",
+        muscle_group: "chest",
+      },
+    });
+    expect(output).toEqual({ exerciseTemplateId: "7daae8b1-3995-40dc-a999-91d1d4bbc709" });
   });
 });
 

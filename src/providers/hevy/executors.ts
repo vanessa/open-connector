@@ -19,6 +19,7 @@ import {
   providerInputError,
   providerResponseError,
   requiredInputString,
+  requiredResponseRecord,
 } from "../provider-runtime.ts";
 import {
   bodyMeasurementValues,
@@ -41,6 +42,7 @@ interface HevyRequestOptions {
   query?: Record<string, QueryValue>;
   body?: unknown;
   phase?: ProviderRequestPhase;
+  acceptText?: boolean;
 }
 
 export const hevyActionHandlers: ProviderActionHandlers<"hevy", HevyActionHandler> = {
@@ -53,14 +55,14 @@ export const hevyActionHandlers: ProviderActionHandlers<"hevy", HevyActionHandle
   },
   async get_workout(input, context) {
     const path = `/workouts/${pathSegment(input.workoutId, "workoutId")}`;
-    return { workout: objectPayload(await hevyRequest({ path }, context), "workout") };
+    return { workout: hevyEntity(await hevyRequest({ path }, context), "workout") };
   },
   async create_workout(input, context) {
     const raw = await hevyRequest(
       { path: "/workouts", method: "POST", body: workoutRequestBody(input.workout) },
       context,
     );
-    return { workout: objectPayload(raw, "workout") };
+    return { workout: hevyEntity(raw, "workout") };
   },
   async update_workout(input, context) {
     const raw = await hevyRequest(
@@ -71,7 +73,7 @@ export const hevyActionHandlers: ProviderActionHandlers<"hevy", HevyActionHandle
       },
       context,
     );
-    return { workout: objectPayload(raw, "workout") };
+    return { workout: hevyEntity(raw, "workout") };
   },
   async get_workout_count(_input, context) {
     const payload = objectPayload(await hevyRequest({ path: "/workouts/count" }, context), "workout count");
@@ -101,14 +103,14 @@ export const hevyActionHandlers: ProviderActionHandlers<"hevy", HevyActionHandle
   },
   async get_routine(input, context) {
     const path = `/routines/${pathSegment(input.routineId, "routineId")}`;
-    return { routine: objectPayload(await hevyRequest({ path }, context), "routine") };
+    return { routine: hevyEntity(await hevyRequest({ path }, context), "routine") };
   },
   async create_routine(input, context) {
     const raw = await hevyRequest(
       { path: "/routines", method: "POST", body: routineRequestBody(input.routine) },
       context,
     );
-    return { routine: objectPayload(raw, "routine") };
+    return { routine: hevyEntity(raw, "routine") };
   },
   async update_routine(input, context) {
     const raw = await hevyRequest(
@@ -119,7 +121,7 @@ export const hevyActionHandlers: ProviderActionHandlers<"hevy", HevyActionHandle
       },
       context,
     );
-    return { routine: objectPayload(raw, "routine") };
+    return { routine: hevyEntity(raw, "routine") };
   },
   async list_routine_folders(input, context) {
     const raw = await hevyRequest({ path: "/routine_folders", query: pageQuery(input) }, context);
@@ -127,7 +129,7 @@ export const hevyActionHandlers: ProviderActionHandlers<"hevy", HevyActionHandle
   },
   async get_routine_folder(input, context) {
     const path = `/routine_folders/${integer(input.folderId, "folderId", providerInputError)}`;
-    return { routineFolder: objectPayload(await hevyRequest({ path }, context), "routine folder") };
+    return { routineFolder: hevyEntity(await hevyRequest({ path }, context), "routine_folder") };
   },
   async create_routine_folder(input, context) {
     const raw = await hevyRequest(
@@ -138,7 +140,7 @@ export const hevyActionHandlers: ProviderActionHandlers<"hevy", HevyActionHandle
       },
       context,
     );
-    return { routineFolder: objectPayload(raw, "routine folder") };
+    return { routineFolder: hevyEntity(raw, "routine_folder") };
   },
   async list_exercise_templates(input, context) {
     const raw = await hevyRequest({ path: "/exercise_templates", query: pageQuery(input) }, context);
@@ -150,10 +152,15 @@ export const hevyActionHandlers: ProviderActionHandlers<"hevy", HevyActionHandle
   },
   async create_exercise_template(input, context) {
     const raw = await hevyRequest(
-      { path: "/exercise_templates", method: "POST", body: customExerciseRequestBody(input.exercise) },
+      {
+        path: "/exercise_templates",
+        method: "POST",
+        body: customExerciseRequestBody(input.exercise),
+        acceptText: true,
+      },
       context,
     );
-    return { exerciseTemplate: objectPayload(raw, "exercise template") };
+    return { exerciseTemplateId: createdExerciseTemplateId(raw) };
   },
   async get_exercise_history(input, context) {
     const raw = await hevyRequest(
@@ -237,6 +244,7 @@ function hevyRequest(options: HevyRequestOptions, context: HevyContext): Promise
     query: options.query,
     body: options.body,
     phase: options.phase,
+    acceptText: options.acceptText,
     fetcher: context.fetcher,
     signal: context.signal,
     headers: { [hevyApiKeyHeader]: context.apiKey },
@@ -254,6 +262,36 @@ function pagedOutput(responseKey: string, outputKey: string, raw: unknown): Reco
     pageCount: optionalInteger(payload.page_count),
     [outputKey]: looseArray(payload[responseKey]),
   };
+}
+
+/**
+ * Read one entity out of a Hevy response.
+ *
+ * Hevy documents every single-entity endpoint as returning the bare entity,
+ * and then does something different per endpoint: `GET /workouts/{id}` and
+ * `GET /routine_folders/{id}` are bare, `POST /routines` wraps the routine in
+ * `routine`, `POST /routine_folders` wraps in `routine_folder`, and both
+ * `POST /workouts` and the two PUTs wrap a single entity in a one-element
+ * array. Unwrapping the documented key and then the array covers every shape
+ * without the caller having to know which endpoint answered.
+ */
+function hevyEntity(raw: unknown, key: string): Record<string, unknown> {
+  const payload = requiredResponseRecord(raw, key);
+  const wrapped = key in payload ? payload[key] : payload;
+  const entity = Array.isArray(wrapped) ? wrapped[0] : wrapped;
+  return requiredResponseRecord(entity, key);
+}
+
+/**
+ * Read the id of a newly created custom exercise template. Hevy documents this
+ * response as `{ id: number }` and actually answers with the bare id as text.
+ */
+function createdExerciseTemplateId(raw: unknown): string {
+  const id = optionalString(raw) ?? optionalString(requiredResponseRecord(raw, "exercise template").id);
+  if (!id) {
+    throw providerResponseError("Hevy created an exercise template without returning its id");
+  }
+  return id;
 }
 
 /**

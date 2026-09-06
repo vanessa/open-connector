@@ -117,6 +117,12 @@ async function readJsonResponse(response: Response, providerName: string): Promi
   try {
     return JSON.parse(text) as unknown;
   } catch {
+    if (!response.ok) {
+      // A failing response may describe itself in plain text. Returning that
+      // text keeps the upstream status and message, instead of reporting the
+      // provider's own 404 as a 502 parse failure.
+      return text;
+    }
     throw new ProviderRequestError(502, `${providerName} returned invalid JSON`);
   }
 }

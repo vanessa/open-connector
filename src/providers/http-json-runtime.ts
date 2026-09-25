@@ -18,6 +18,12 @@ export interface JsonRequestOptions {
   query?: Record<string, QueryValue>;
   body?: unknown;
   phase?: ProviderRequestPhase;
+  /**
+   * Return the raw body of a successful response that is not JSON, instead of
+   * raising. Only for an endpoint known to answer in plain text, such as one
+   * that returns a bare created id.
+   */
+  acceptText?: boolean;
 }
 
 export async function requestJson(input: JsonRequestOptions): Promise<unknown> {
@@ -30,7 +36,7 @@ export async function requestJson(input: JsonRequestOptions): Promise<unknown> {
       body: input.body === undefined ? undefined : JSON.stringify(input.body),
       signal: input.signal,
     });
-    payload = await readJsonResponse(response, input.providerName);
+    payload = await readJsonResponse(response, input.providerName, input.acceptText === true);
   } catch (error) {
     if (error instanceof ProviderRequestError) {
       throw error;
@@ -109,7 +115,7 @@ function hasHeader(headers: Record<string, string>, name: string): boolean {
   return Object.keys(headers).some((key) => key.toLowerCase() === normalized);
 }
 
-async function readJsonResponse(response: Response, providerName: string): Promise<unknown> {
+async function readJsonResponse(response: Response, providerName: string, acceptText: boolean): Promise<unknown> {
   const text = await response.text();
   if (!text.trim()) {
     return null;
@@ -117,6 +123,12 @@ async function readJsonResponse(response: Response, providerName: string): Promi
   try {
     return JSON.parse(text) as unknown;
   } catch {
+    if (acceptText || !response.ok) {
+      // A failing response may describe itself in plain text. Returning that
+      // text keeps the upstream status and message, instead of reporting the
+      // provider's own 404 as a 502 parse failure.
+      return text;
+    }
     throw new ProviderRequestError(502, `${providerName} returned invalid JSON`);
   }
 }
